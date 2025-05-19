@@ -2,11 +2,16 @@ import time
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import coremltools as ct
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 def test_original_model():
-    model_name = "Qwen/Qwen2.5-1.5B-Instruct"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    model_name = os.getenv('MODEL_NAME')
+    tokenizer = AutoTokenizer.from_pretrained(model_name, token=os.getenv('HF_TOKEN'))
+    model = AutoModelForCausalLM.from_pretrained(model_name, token=os.getenv('HF_TOKEN'))
     
     prompt = "Hello, how are you?"
     inputs = tokenizer(prompt, return_tensors="pt")
@@ -21,8 +26,8 @@ def test_original_model():
     return generated_text, time_per_token
 
 def test_compiled_model():
-    model = ct.models.MLModel("Qwen1_5B.mlpackage")
-    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct")
+    model = ct.models.MLModel(os.getenv('MODEL_OUTPUT_NAME'))
+    tokenizer = AutoTokenizer.from_pretrained(os.getenv('MODEL_NAME'), token=os.getenv('HF_TOKEN'))
     
     prompt = "Hello, how are you?"
     inputs = tokenizer(prompt, return_tensors="pt")
@@ -48,4 +53,4 @@ if __name__ == "__main__":
     print("\nTesting compiled model...")
     comp_text, comp_time = test_compiled_model()
     print(f"Compiled model output: {comp_text}")
-    print(f"Time per token: {comp_time:.4f} seconds") 
+    print(f"Time per token: {comp_time:.4f} seconds")
