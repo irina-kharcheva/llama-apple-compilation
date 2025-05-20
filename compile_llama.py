@@ -2,6 +2,7 @@ import coremltools as ct
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import os
+import numpy as np
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -16,8 +17,9 @@ def compile_llama_model():
     # Set model to evaluation mode
     model.eval()
     
-    # Create example input
-    example_input = tokenizer("Hello, how are you?", return_tensors="pt")
+    # Create example input with fixed length
+    example_text = "Hello, how are you?"
+    example_input = tokenizer(example_text, return_tensors="pt", padding="max_length", max_length=7)
     input_ids = example_input["input_ids"]
     attention_mask = example_input["attention_mask"]
     
@@ -28,8 +30,10 @@ def compile_llama_model():
             self.model = model
             
         def forward(self, input_ids, attention_mask):
+            # Get the last token's logits
             outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
-            return outputs.logits
+            logits = outputs.logits[:, -1, :]  # Get logits for the last token
+            return logits
     
     # Create and trace the wrapped model
     wrapped_model = ModelWrapper(model)
@@ -43,8 +47,11 @@ def compile_llama_model():
         mlmodel = ct.convert(
             traced_model,
             inputs=[
-                ct.TensorType(name="input_ids", shape=input_ids.shape),
-                ct.TensorType(name="attention_mask", shape=attention_mask.shape)
+                ct.TensorType(name="input_ids", shape=(1, 7), dtype=np.int32),
+                ct.TensorType(name="attention_mask", shape=(1, 7), dtype=np.int32)
+            ],
+            outputs=[
+                ct.TensorType(name="logits", dtype=np.float32)
             ],
             source="pytorch",
             compute_units=ct.ComputeUnit.ALL,
