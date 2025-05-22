@@ -1,13 +1,31 @@
 # Llama-3.2-1B Apple Compilation
 
-This project compiles the Llama-3.2-1B model for Apple devices using Core ML.
+This project compiles the Llama-3.2-1B model for Apple devices using Core ML and compare results.
+
+
+### Prerequisites
+
+- Python 3.8–3.11
+- macOS with Xcode installed
+- Apple device for testing
+- Access to Llama-3.2-1B model (requires accepting Meta's license agreement)
+- Hugging Face account and access token
+
+### Project Structure
+
+- `compile_llama.py` - Script for model compilation
+- `test_models.py` - Script for testing and comparing models
+- `requirements.txt` - Project dependencies
+- `.env` - Environment variables (not in git)
+- `.env.example` - Example environment variables file
+- `Compiled_Llama3_2_1B.mlpackage` - Compiled model (generated after running compile_llama.py)
 
 ## Setup
 
 1. Create a virtual environment and install dependencies:
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -18,7 +36,7 @@ MODEL_NAME=meta-llama/Llama-3.2-1B
 MODEL_OUTPUT_NAME=llama_3_2_1b.mlpackage
 ```
 
-Replace `your_huggingface_token` with your actual Hugging Face token.
+Replace `your_huggingface_token` with your actual Hugging Face token with “Access to gated models” and “Access to gated public repositories” permissions.
 
 ## Usage
 
@@ -31,64 +49,6 @@ python compile_llama.py
 ```bash
 python test_models.py
 ```
-
-## Requirements
-
-- Python 3.8+
-- PyTorch
-- Transformers
-- Core ML Tools
-- python-dotenv
-
-## Notes
-
-- The model is compiled for iOS 16 and later
-- Make sure you have access to the Llama-3.2-1B model on Hugging Face
-- The compiled model will be saved as `llama_3_2_1b.mlpackage`
-
-This project provides tools for compiling the Llama-3.2-1B model for Apple devices using CoreML.
-
-### Prerequisites
-
-- Python 3.8+
-- macOS with Xcode installed
-- Apple device for testing (iPhone/iPad/Mac)
-- Access to Llama-3.2-1B model (requires accepting Meta's license agreement)
-- Hugging Face account and access token
-
-### Installation
-
-1. Clone this repository
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-3. Set up your environment variables:
-   - Copy `.env.example` to `.env`
-   - Replace `your_token_here` in `.env` with your actual Hugging Face token
-   - You can get your token from https://huggingface.co/settings/tokens
-
-### Usage
-
-1. Compile the model:
-```bash
-python compile_llama.py
-```
-
-2. Test and compare models:
-```bash
-python test_models.py
-```
-
-### Project Structure
-
-- `compile_llama.py` - Script for model compilation
-- `test_models.py` - Script for testing and comparing models
-- `requirements.txt` - Project dependencies
-- `.env` - Environment variables (not in git)
-- `.env.example` - Example environment variables file
-- `Llama3_2_1B.mlpackage` - Compiled model (generated after running compile_llama.py)
 
 ### Notes
 

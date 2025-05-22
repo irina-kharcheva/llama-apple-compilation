@@ -12,6 +12,7 @@ def compile_llama_model():
     # Load model and tokenizer with token
     model_name = os.getenv('MODEL_NAME')
     tokenizer = AutoTokenizer.from_pretrained(model_name, token=os.getenv('HF_TOKEN'))
+    tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(model_name, token=os.getenv('HF_TOKEN'))
     
     # Set model to evaluation mode
