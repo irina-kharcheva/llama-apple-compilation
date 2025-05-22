@@ -11,15 +11,6 @@ This project compiles the Llama-3.2-1B model for Apple devices using Core ML and
 - Access to Llama-3.2-1B model (requires accepting Meta's license agreement)
 - Hugging Face account and access token
 
-### Project Structure
-
-- `compile_llama.py` - Script for model compilation
-- `test_models.py` - Script for testing and comparing models
-- `requirements.txt` - Project dependencies
-- `.env` - Environment variables (not in git)
-- `.env.example` - Example environment variables file
-- `Compiled_Llama3_2_1B.mlpackage` - Compiled model (generated after running compile_llama.py)
-
 ## Setup
 
 1. Create a virtual environment and install dependencies:
@@ -33,7 +24,7 @@ pip install -r requirements.txt
 ```
 HF_TOKEN=your_huggingface_token
 MODEL_NAME=meta-llama/Llama-3.2-1B
-MODEL_OUTPUT_NAME=llama_3_2_1b.mlpackage
+MODEL_OUTPUT_NAME=Compiled_Llama3_2_1B.mlpackage
 ```
 
 Replace `your_huggingface_token` with your actual Hugging Face token with “Access to gated models” and “Access to gated public repositories” permissions.
