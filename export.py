@@ -217,17 +217,18 @@ def export() -> None:
     
 
     # Block-wise quantize model weights to int4
-    # op_config = ct.optimize.coreml.OpLinearQuantizerConfig(
-    #     mode="linear_symmetric",
-    #     dtype="int4",
-    #     granularity="per_block",
-    #     block_size=32,
-    # )
-    # config = ct.optimize.coreml.OptimizationConfig(global_config=op_config)
-    # mlmodel_int4 = ct.optimize.coreml.linear_quantize_weights(mlmodel_fp16, config=config)
-    # mlmodel_int4._spec.description.metadata.userDefined.update({METADATA_TOKENIZER: MODEL_ID})
-    # del mlmodel_fp16
-    # mlmodel_int4.save("StatefulLlama1BInstructInt4.mlpackage")
+    op_config = ct.optimize.coreml.OpLinearQuantizerConfig(
+        mode="linear_symmetric",
+        dtype="int4",
+        granularity="per_block",
+        block_size=32,
+    )
+    config = ct.optimize.coreml.OptimizationConfig(global_config=op_config)
+    mlmodel_int4 = ct.optimize.coreml.linear_quantize_weights(mlmodel_fp16, config=config)
+    mlmodel_int4._spec.description.metadata.userDefined.update({METADATA_TOKENIZER: MODEL_ID})
+    del mlmodel_fp16
+    mlmodel_int4._spec.description.metadata.userDefined[METADATA_TOKENIZER] = MODEL_ID
+    mlmodel_int4.save("StatefulLlama1BInstructInt4.mlpackage")
 
 
 if __name__ == "__main__":
