@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 import warnings
 from typing import List, Optional, Tuple
 
@@ -15,6 +16,12 @@ from transformers.models.llama.modeling_llama import (
     apply_rotary_pos_emb, 
     repeat_kv,
 )
+
+# Set seeds for reproducibility
+SEED = 42
+torch.manual_seed(SEED)
+np.random.seed(SEED)
+random.seed(SEED)
 
 warnings.filterwarnings("ignore")
 logging.getLogger("coremltools").setLevel(logging.ERROR)
