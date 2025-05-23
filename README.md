@@ -20,23 +20,26 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2. Create a `.env` file in the project root with the following content:
-```
-HF_TOKEN=your_huggingface_token
-MODEL_NAME=meta-llama/Llama-3.2-1B
-MODEL_OUTPUT_NAME=Compiled_Llama3_2_1B.mlpackage
+2. Login to Hugging Face:
+```bash
+huggingface-cli login
 ```
 
-Replace `your_huggingface_token` with your actual Hugging Face token with “Access to gated models” and “Access to gated public repositories” permissions.
+Notice that your actual Hugging Face token should be with “Read access to contents of all public gated repos you can access” permissions.
 
 ## Usage
 
 1. Compile the model:
 ```bash
-python compile_llama.py
+python export.py
 ```
 
-2. Test the model:
+2. Generate text:
+```bash
+python3 generate.py ./StatefulLlama1BInstruct.mlpackage --prompt "Once upon a time"
+```
+
+3. Compare models:
 ```bash
 python test_models.py
 ```
