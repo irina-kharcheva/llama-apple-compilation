@@ -1,13 +1,14 @@
 import time
 import argparse
 import random
+import csv
 import numpy as np
 import torch
 from typing import Tuple
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.models.llama.modeling_llama import LlamaConfig
 from coremltools.models import MLModel
-from export import MODEL_ID # Using the same base model ID
+from export import MODEL_ID
 from generation_utils import load_coreml_model_and_tokenizer, get_next_token_coreml
 
 # Set seeds for reproducibility
@@ -18,6 +19,8 @@ random.seed(SEED)
 # Ensure deterministic behavior for cuDNN, if used (though less relevant for CPU inference)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
+
+PROMPTS_FILENAME = "prompts.csv"
 
 def generate_text_original(
     model: AutoModelForCausalLM,
@@ -30,8 +33,6 @@ def generate_text_original(
     input_ids = inputs.input_ids
     
     start_time = time.perf_counter()
-    # Generate tokens
-    # Use a simple generation loop for fair comparison with the CoreML version
     generated_ids = input_ids.tolist()[0]
     
     for _ in range(max_new_tokens):
@@ -50,7 +51,7 @@ def generate_text_original(
     generated_text = tokenizer.decode(generated_ids)
     generation_time = end_time - start_time
     tokens_generated = len(generated_ids) - input_ids.shape[1]
-    time_per_token = generation_time / tokens_generated if tokens_generated > 0 else 0
+    time_per_token = generation_time / tokens_generated if tokens_generated > 0 else 0.0
     
     return generated_text, time_per_token
 
@@ -74,29 +75,57 @@ def generate_text_coreml(
         kv_cache_state=kv_cache_state
     )
     
+    generated_token_count = 0
     for i, (token, updated_kv_cache_state) in enumerate(token_generator):
         kv_cache_state = updated_kv_cache_state
         if token == tokenizer.eos_token_id or i >= max_new_tokens:
             break
         extend_tokens.append(token)
+        generated_token_count +=1
         
     end_time = time.perf_counter()
     
     full_text = tokenizer.decode(prompt_tokens_np[0].tolist() + extend_tokens)
     generation_time = end_time - start_time
-    time_per_token = generation_time / len(extend_tokens) if extend_tokens else 0
+    time_per_token = generation_time / generated_token_count if generated_token_count > 0 else 0.0
     
     return full_text, time_per_token
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compare original and CoreML model outputs and speed.")
     parser.add_argument("coreml_model_path", type=str, help="Path to the CoreML model package (.mlpackage)")
-    parser.add_argument("--prompt", type=str, default="Translate to German: My name is Llama.", help="Prompt for text generation")
-    parser.add_argument("--max_new_tokens", type=int, default=50, help="Maximum number of new tokens to generate")
+    parser.add_argument("--prompt", type=str, default="Translate to German: My name is Llama.", help="Prompt for text generation (used if --use_prompts_from_file is not set).")
+    parser.add_argument("--use_prompts_from_file", action="store_true", help=f"If set, read prompts from {PROMPTS_FILENAME} (second column), ignoring --prompt.")
+    parser.add_argument("--max_new_tokens", type=int, default=50, help="Maximum number of new tokens to generate for each prompt.")
     
     args = parser.parse_args()
 
-    # Load original Hugging Face model and tokenizer
+    prompts_to_run = []
+    if args.use_prompts_from_file:
+        print(f"Reading prompts from {PROMPTS_FILENAME} (second column)...")
+        try:
+            with open(PROMPTS_FILENAME, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if len(row) > 1:
+                        prompts_to_run.append(row[1])
+            if not prompts_to_run:
+                print(f"Warning: No prompts found in the second column of {PROMPTS_FILENAME} or file is empty.")
+        except FileNotFoundError:
+            print(f"Error: {PROMPTS_FILENAME} not found. Please create it or do not use --use_prompts_from_file.")
+            exit()
+        except Exception as e:
+            print(f"Error reading {PROMPTS_FILENAME}: {e}")
+            exit()
+        if prompts_to_run:
+             print(f"Loaded {len(prompts_to_run)} prompts from {PROMPTS_FILENAME}.")
+    else:
+        prompts_to_run.append(args.prompt)
+    
+    if not prompts_to_run: 
+        print("Error: No prompts to process. Please provide a prompt via --prompt or ensure prompts.csv is valid and contains data in the second column when using --use_prompts_from_file.")
+        exit()
+
     print(f"Loading original model: {MODEL_ID}...")
     original_tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 
@@ -107,42 +136,60 @@ if __name__ == "__main__":
     original_model.eval() # Set to evaluation mode
     print("Original model loaded.")
 
-    # Load Core ML model and tokenizer (tokenizer should be the same)
     print(f"Loading CoreML model from: {args.coreml_model_path}...")
     coreml_model, coreml_tokenizer = load_coreml_model_and_tokenizer(args.coreml_model_path)
     print("CoreML model loaded.")
 
-    print(f"\n--- Generating with Original Model ({MODEL_ID}) ---")
-    original_text, original_time_per_token = generate_text_original(
-        original_model, original_tokenizer, args.prompt, args.max_new_tokens
-    )
-    print(f"Output: {original_text}")
-    print(f"Time per token: {original_time_per_token:.4f} seconds")
+    all_original_times_per_token = []
+    all_coreml_times_per_token = []
 
-    print(f"\n--- Generating with CoreML Model ---")
-    coreml_text, coreml_time_per_token = generate_text_coreml(
-        coreml_model, coreml_tokenizer, args.prompt, args.max_new_tokens
-    )
-    print(f"Output: {coreml_text}")
-    print(f"Time per token: {coreml_time_per_token:.4f} seconds")
+    for i, current_prompt in enumerate(prompts_to_run):
+        print(f"\n--- Prompt {i+1}/{len(prompts_to_run)}: \"{current_prompt}\" ---")
+        
+        print(f"--- Generating with Original Model ({MODEL_ID}) ---")
+        original_text, original_time_per_token = generate_text_original(
+            original_model, original_tokenizer, current_prompt, args.max_new_tokens
+        )
+        print(f"Output: {original_text}")
+        print(f"Time per token: {original_time_per_token:.4f} seconds")
+        if original_time_per_token > 0: # Only add valid times for averaging
+             all_original_times_per_token.append(original_time_per_token)
 
-    print("\n--- Comparison Summary ---")
-    print(f"Prompt: {args.prompt}")
-    print(f"Original Model Output: {original_text}")
-    print(f"CoreML Model Output:   {coreml_text}")
-    
-    output_match = "Yes" if original_text == coreml_text else "No"
-    print(f"Outputs Match: {output_match}")
+        print(f"\n--- Generating with CoreML Model ---")
+        coreml_text, coreml_time_per_token = generate_text_coreml(
+            coreml_model, coreml_tokenizer, current_prompt, args.max_new_tokens
+        )
+        print(f"Output: {coreml_text}")
+        print(f"Time per token: {coreml_time_per_token:.4f} seconds")
+        if coreml_time_per_token > 0: # Only add valid times for averaging
+            all_coreml_times_per_token.append(coreml_time_per_token)
 
-    print(f"Original Model - Time per token: {original_time_per_token:.4f} s")
-    print(f"CoreML Model   - Time per token: {coreml_time_per_token:.4f} s")
+        print("\n--- Individual Comparison Summary ---")
+        print(f"Prompt: {current_prompt}")
+        print(f"Original Model Output: {original_text}")
+        print(f"CoreML Model Output:   {coreml_text}")
+        output_match = "Yes" if original_text == coreml_text else "No"
+        print(f"Outputs Match: {output_match}")
+        print(f"Original Model - Time per token: {original_time_per_token:.4f} s")
+        print(f"CoreML Model   - Time per token: {coreml_time_per_token:.4f} s")
 
-    if coreml_time_per_token > 0 and original_time_per_token > 0:
-        speed_diff = original_time_per_token / coreml_time_per_token
-        print(f"CoreML model is {speed_diff:.2f}x {'faster' if speed_diff > 1 else 'slower'} than the original model.")
-    elif coreml_time_per_token == 0 and original_time_per_token > 0:
-        print("CoreML model generated tokens instantly (or too fast to measure for the given prompt/tokens).")
-    elif original_time_per_token == 0 and coreml_time_per_token > 0:
-         print("Original model generated tokens instantly (or too fast to measure for the given prompt/tokens).")
+    print("\n--- Overall Average Performance ---")
+    if all_original_times_per_token:
+        avg_original_time = sum(all_original_times_per_token) / len(all_original_times_per_token)
+        print(f"Average Original Model - Time per token: {avg_original_time:.4f} s (over {len(all_original_times_per_token)} prompts)")
     else:
-        print("Could not compare speed (one or both models did not generate tokens or took no measurable time).") 
+        avg_original_time = 0
+        print("Original model did not successfully generate tokens for any prompt or time was zero.")
+
+    if all_coreml_times_per_token:
+        avg_coreml_time = sum(all_coreml_times_per_token) / len(all_coreml_times_per_token)
+        print(f"Average CoreML Model   - Time per token: {avg_coreml_time:.4f} s (over {len(all_coreml_times_per_token)} prompts)")
+    else:
+        avg_coreml_time = 0
+        print("CoreML model did not successfully generate tokens for any prompt or time was zero.")
+
+    if avg_coreml_time > 0 and avg_original_time > 0:
+        avg_speed_diff = avg_original_time / avg_coreml_time
+        print(f"On average, CoreML model is {avg_speed_diff:.2f}x {'faster' if avg_speed_diff > 1 else 'slower'} than the original model.")
+    else:
+        print("Could not compute average speed comparison (one or both models had no successful generations with measurable time).") 

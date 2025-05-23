@@ -43,6 +43,10 @@ python3 generate.py ./StatefulLlama1BInstruct.mlpackage --prompt "Once upon a ti
 ```bash
 python3 compare_models.py ./StatefulLlama1BInstruct.mlpackage --prompt "Once upon a time"
 ```
+Representative evaluation using prompts from `promts.csv`
+```bash
+python3 compare_models.py ./StatefulLlama1BInstruct.mlpackage --use_prompts_from_file
+```
 
 ### Notes
 

@@ -63,4 +63,4 @@ def get_next_token_coreml(model: MLModel, prompt_tokens: np.ndarray, kv_cache_st
             current_kv_cache_state=kv_cache_state
         )
         token: int = sample(logits=logits)
-        num_past_tokens += 1 
+        num_past_tokens += 1
