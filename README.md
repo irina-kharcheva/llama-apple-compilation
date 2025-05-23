@@ -41,7 +41,7 @@ python3 generate.py ./StatefulLlama1BInstruct.mlpackage --prompt "Once upon a ti
 
 3. Compare models:
 ```bash
-python test_models.py
+python3 compare_models.py ./StatefulLlama1BInstruct.mlpackage --prompt "Once upon a time"
 ```
 
 ### Notes
