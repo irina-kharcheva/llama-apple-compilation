@@ -210,6 +210,7 @@ def export() -> None:
         states=states,
         minimum_deployment_target=ct.target.iOS18,
         skip_model_load=False,
+        compute_units=ct.ComputeUnit.All,
     )
     del traced_model
     mlmodel_fp16._spec.description.metadata.userDefined[METADATA_TOKENIZER] = MODEL_ID

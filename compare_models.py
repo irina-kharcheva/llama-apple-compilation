@@ -10,6 +10,8 @@ from transformers.models.llama.modeling_llama import LlamaConfig
 from coremltools.models import MLModel
 from export import MODEL_ID
 from generation_utils import load_coreml_model_and_tokenizer, get_next_token_coreml
+import torch.profiler
+from torch.mps.profiler import profile as mps_profile
 
 # Set seeds for reproducibility
 SEED = 42
@@ -31,26 +33,46 @@ def generate_text_original(
     """Generates text using the original Hugging Face model and measures inference time."""
     inputs = tokenizer(prompt, return_tensors="pt")
     input_ids = inputs.input_ids
-    
+
+    if model.device.type == "mps":
+        input_ids = input_ids.to(model.device)
+
     start_time = time.perf_counter()
-    generated_ids = input_ids.tolist()[0]
-    
-    for _ in range(max_new_tokens):
-        with torch.no_grad():
-            outputs = model(torch.tensor([generated_ids], dtype=torch.long))
-            logits = outputs.logits
-        next_token_logits = logits[:, -1, :]
-        next_token_id = torch.argmax(next_token_logits, dim=-1).item()
-        
-        if next_token_id == tokenizer.eos_token_id:
-            break
-        generated_ids.append(next_token_id)
-        
+    generated_ids_list = input_ids.cpu().tolist()[0] # Keep generated_ids as a Python list for append
+
+    if model.device.type == "mps":
+        print("Starting MPS profiler for original model generation...")
+        with mps_profile(mode='interval', wait_until_completed=True):
+            for _ in range(max_new_tokens):
+                with torch.no_grad():
+                    current_input_tensor = torch.tensor([generated_ids_list], dtype=torch.long).to(model.device)
+                    outputs = model(current_input_tensor)
+                    logits = outputs.logits
+                next_token_logits = logits[:, -1, :]
+                next_token_id = torch.argmax(next_token_logits, dim=-1).item()
+                
+                if next_token_id == tokenizer.eos_token_id:
+                    break
+                generated_ids_list.append(next_token_id)
+        print("Stopped MPS profiler for original model generation.")
+    else: # Original path for non-MPS devices
+        for _ in range(max_new_tokens):
+            with torch.no_grad():
+                current_input_tensor = torch.tensor([generated_ids_list], dtype=torch.long).to(model.device)
+                outputs = model(current_input_tensor)
+                logits = outputs.logits
+            next_token_logits = logits[:, -1, :]
+            next_token_id = torch.argmax(next_token_logits, dim=-1).item()
+            
+            if next_token_id == tokenizer.eos_token_id:
+                break
+            generated_ids_list.append(next_token_id)
+            
     end_time = time.perf_counter()
     
-    generated_text = tokenizer.decode(generated_ids)
+    generated_text = tokenizer.decode(generated_ids_list)
     generation_time = end_time - start_time
-    tokens_generated = len(generated_ids) - input_ids.shape[1]
+    tokens_generated = len(generated_ids_list) - input_ids.shape[1]
     time_per_token = generation_time / tokens_generated if tokens_generated > 0 else 0.0
     
     return generated_text, time_per_token
@@ -97,6 +119,7 @@ if __name__ == "__main__":
     parser.add_argument("--prompt", type=str, default="Translate to German: My name is Llama.", help="Prompt for text generation (used if --use_prompts_from_file is not set).")
     parser.add_argument("--use_prompts_from_file", action="store_true", help=f"If set, read prompts from {PROMPTS_FILENAME} (second column), ignoring --prompt.")
     parser.add_argument("--max_new_tokens", type=int, default=50, help="Maximum number of new tokens to generate for each prompt.")
+    parser.add_argument("--torch_device", type=str, default='cpu', choices=['cpu', 'mps'], help="Device for the original model: 'cpu' or 'mps'. Defaults to 'mps' if available, else 'cpu'.")
     
     args = parser.parse_args()
 
@@ -133,7 +156,26 @@ if __name__ == "__main__":
     config_dict["rope_scaling"] = {"type": "linear", "factor": 2.0}
     model_config = LlamaConfig.from_dict(config_dict)
     original_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, config=model_config, token=True)
-    original_model.eval() # Set to evaluation mode
+    original_model.eval()
+
+    torch_device_str = args.torch_device
+    if torch_device_str is None: # Default logic if not specified
+        if torch.backends.mps.is_available():
+            torch_device_str = "mps"
+        else:
+            torch_device_str = "cpu"
+    
+    if torch_device_str == "mps" and not torch.backends.mps.is_available():
+        print("Warning: MPS specified but not available. Falling back to CPU for original model.")
+        torch_device_str = "cpu"
+    elif torch_device_str == "mps":
+        print("Original model will run on MPS device.")
+    else:
+        print("Original model will run on CPU device.")
+
+    torch_device = torch.device(torch_device_str)
+    original_model.to(torch_device)
+    
     print("Original model loaded.")
 
     print(f"Loading CoreML model from: {args.coreml_model_path}...")
@@ -147,13 +189,29 @@ if __name__ == "__main__":
         print(f"\n--- Prompt {i+1}/{len(prompts_to_run)}: \"{current_prompt}\" ---")
         
         print(f"--- Generating with Original Model ({MODEL_ID}) ---")
-        original_text, original_time_per_token = generate_text_original(
-            original_model, original_tokenizer, current_prompt, args.max_new_tokens
-        )
+        profiler_activities = [torch.profiler.ProfilerActivity.CPU]
+        # Note: ProfilerActivity.MPS does not exist. Use XCode to profile MPS.
+
+        with torch.profiler.profile(
+            activities=profiler_activities,
+            profile_memory=True,
+            record_shapes=True,
+            with_stack=True # Added for more detailed stack traces
+        ) as prof_original:
+            original_text, original_time_per_token = generate_text_original(
+                original_model, original_tokenizer, current_prompt, args.max_new_tokens
+            )
+        
         print(f"Output: {original_text}")
         print(f"Time per token: {original_time_per_token:.4f} seconds")
         if original_time_per_token > 0: # Only add valid times for averaging
              all_original_times_per_token.append(original_time_per_token)
+
+        print("\n--- Original Model Profiler Results ---")
+        print(prof_original.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
+        trace_filename_original = f"compare_original_model_trace_prompt_{i+1}.json"
+        prof_original.export_chrome_trace(trace_filename_original)
+        print(f"Exported Chrome trace for original model to {trace_filename_original}")
 
         print(f"\n--- Generating with CoreML Model ---")
         coreml_text, coreml_time_per_token = generate_text_coreml(
