@@ -68,6 +68,8 @@ def generate_text_original(
                 break
             generated_ids_list.append(next_token_id)
             
+    if model.device.type == "mps":
+        torch.mps.synchronize() # Ensure all MPS operations are finished
     end_time = time.perf_counter()
     
     generated_text = tokenizer.decode(generated_ids_list)
